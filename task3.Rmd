@@ -277,7 +277,7 @@ We found some differences in the terms that contributed the most in the differen
 Also, we found that in the former method like was used as the word that contributed the most to the positive sentiment, but it should be noted that like is positive when used as a verb, but does not mean anything when used as a preposition, so it is more numerous than any other word because it is counted when used as both a verb and a preposition.
 
 ## Conclusion
-Generally speaking, the conclusions from the sentiment function are a little more objective, since different sentiment dictionaries have different definitions of whether words are positive or negative, and sometimes they even misunderstand some words for positive or negative ones. But there is still some limitation, since this is only after I have analysed the book heidi, and may not be applicable to all text analysis.
+Generally speaking, the conclusions from the sentiment function are a little more objective, since different sentiment dictionaries have different definitions of whether words are positive or negative, and sometimes they even misunderstand some words for positive or negative ones. But there is still some limitation, since this is only after I have analysed the book ***Heidi***, and may not be applicable to all text analysis.
 
 ## Reference 
 
