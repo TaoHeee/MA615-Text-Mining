@@ -5,7 +5,7 @@
 In this repository, I chose the Heidi as the dataset for text mining. I perform sentiment analysis on the dataset using sentiments from tidytext and inner_join() from dplyr. Then, I analyzed this book by words and by sentence, by using different sentiment measurement.
 <figure>
   <img align = "right"
-       src="https://literature.fandom.com/wiki/Heidi?file=2013Heidi3Brit.jpg"   
+       src="https://static.wikia.nocookie.net/literature/images/a/ad/2013Heidi3Brit.jpg/revision/latest?cb=20160729060848"   
             width=45% height=45%> 
 </figure>
 
