@@ -1,0 +1,301 @@
+---
+title: "Task3"
+author: "Tao He"
+date: "12/7/2021"
+output: pdf_document
+---
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, comment = NA,
+                       warning = FALSE, margin = FALSE)
+
+pacman::p_load(
+'devtools',
+'tidytext',
+'textdata',
+'dplyr',
+'ggplot2',
+'wordcloud',
+'reshape2',
+'tnum',
+'tidyr',
+'gutenbergr',
+'tidyverse',
+'stopwords',
+'wordcloud2',
+'itsmr',
+'flextable',
+'sentimentr',
+'knitr',
+'magrittr',
+'gridExtra')
+
+data(stop_words)
+```
+
+
+## Sentence-level Analysis
+
+
+### tnum package
+
+Using a single word as a marker for sentiment analysis can be less than ideal. This is because nearby words add context - in particular, negation makes analysis tricky. For example, "magic" is considered a positive word, while "dark magic" is considered a negative meaning. To further analyze ***Heidi***, I decided to look at the entire sentence where these emotional words are found.
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, include=FALSE}
+# devtools::install_github("Truenumbers/tnum/tnum")
+library(tnum)
+tnum.authorize("mssp1.bu.edu")
+tnum.setSpace("test2")
+source("Book2TN-v6A-1.R")
+```
+
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, include=FALSE}
+# tnum.getDBPathList(taxonomy="subject", levels=2)  # level 1 and 2?
+
+Book_Heidi <- gutenberg_download(1448)
+write.table(Book_Heidi,'Book_Heidi.txt',row.names = F)
+#adding <> mannual into txt file
+#Book_Heidi_tnum <- read.table("Book_Heidi.txt", header = T)
+# tnBooksFromLines(Book_Heidi_tnum$text, "Johanna/Heidi")     #upload only once
+```
+
+
+### Sentiment by sentences
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, include=FALSE}
+q1<- tnum.query("Johanna/Heidi/heading# has ordinal", max=50)
+df1 <- tnum.objectsToDf(q1)
+df1 %>% select(subject:numeric.value)%>% head()
+
+q2<- tnum.query("Johanna/Heidi# has text",max=60)
+df2 <- tnum.objectsToDf(q1)
+df2 %>% select(subject:string.value)%>% head()
+
+df3<- tnum.query('Johanna/Heidi/section# has text',max=7000) %>% tnum.objectsToDf()
+```
+
+
+Then I use sentiment function to get sentiment score ,and then, group by these scores with section to get the average result. I plot the average sentiment score though sentence by sentence.
+
+
+```{r fig.height=4, fig.width= 10, fig.cap="The average sentiment score from high to low."}
+book_sentence<- df3 %>% separate(col=subject,
+                  into = c("author", "bookname","section","paragraph","sentence"), 
+                  sep = "/", 
+                  fill = "right") %>% 
+  select(section:string.value)
+#book_sentence$section<-str_extract_all(book_sentence$section,"\\d+") %>% unlist() %>% as.numeric()
+book_sentence<-book_sentence %>% mutate_at(c('section','paragraph','sentence'),~str_extract_all(.,"\\d+") %>% 
+                                             unlist() %>% as.numeric())
+
+sentence_out<-book_sentence %>% get_sentences()%>%
+    sentiment()
+plot(sentence_out)
+```
+
+
+```{r fig.height=4, fig.width= 10, fig.cap="Distribution of average sentiment level of the whole book"}
+Book_Heidi %>% 
+  get_sentences() %>% 
+  sentiment_by(by = NULL) %>% #View()
+  ggplot() + geom_density(aes(ave_sentiment)) +
+  labs(x = "Average sentiment value", y ="density")
+```
+
+Figure 2 shows the distribution of sentiment level of the whole book measured by each sentence.
+
+\newpage
+
+```{r fig.height=4, fig.width= 10, fig.cap="Sentiment score for each sentence of first 500 sentences of whole book"}
+w <- tnum.query("johanna/heidi/section# has text",max=500)  #Change all the text into sentence level
+wdf <- tnum.objectsToDf(w)
+
+sentence <- wdf %>%
+  get_sentences() %>%
+  sentiment_by(by = NULL)
+
+sentence %>% ggplot() + geom_density(aes(ave_sentiment)) +
+  labs(x = "Average sentiment value", y ="density")
+```
+Figure 3 shows the distribution of sentiment level of each sentence of the first 500 sentence of the whole book.
+
+```{r fig.height=4, fig.width= 10}
+sentence %>% ggplot(aes(element_id, ave_sentiment)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "sentence id", y = "Average sentiment value")
+```
+
+
+Figure 4 shows the sentiment score for each sentence of first 500 sentence of whole book.
+
+### Compare this analysis with the analysis I did in Task TWO
+
+Since the sentiment function and the sentiment lexicons have different scales for measuring sentiment. I used the sentiment lexicons in task2 to count the positive and negative words in every 80 lines, however, in task3, I used the sentiment function is to rate the sentiment of each sentence.
+
+Therefore, I was supposed to use the sentiment dictionary to count the positive and negative words in each sentence to see the overall sentiment trend.
+
+Then, I extracted all the words in each sentence and used the sentiment lexicons I used in task2 inner_join().
+
+```{r fig.cap="sentiment comparison between sentiment lexicons and sentiment function"}
+Book_Heidi <- gutenberg_download(1448)
+
+tidy_books <- Book_Heidi %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+# sentiment lexicons
+afinn <- tidy_books %>% 
+  inner_join(get_sentiments("afinn"), by = "word") %>% 
+  group_by(index = linenumber %/% 80) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  tidy_books %>% 
+    inner_join(get_sentiments("bing"), by = "word") %>%
+    mutate(method = "Bing et al."),
+  tidy_books %>% 
+    inner_join(get_sentiments("nrc"), by = "word") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative")) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+plot1 <- bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+
+
+##################################################################
+# sentiment function
+book_sentence_tnum <- tnum.query("johanna/heidi/# has text",max=4442) %>%
+  tnum.objectsToDf()%>% 
+  get_sentences()
+
+
+# comparison <- sentence_work %>%
+#   mutate(
+#     sentenceid = cumsum(str_detect(text, 
+#                                 regex("^element_id [\\divxlc]", 
+#                                       ignore_case = TRUE)))) %>%
+#   unnest_tokens(word, text)
+
+comparison <- book_sentence_tnum %>%
+  mutate(linenumber = 1:6725,
+         ) %>%
+  unnest_tokens(word, string.value) %>%
+  anti_join(stop_words,by = "word")
+
+afinn_tnum <- comparison %>% 
+  inner_join(get_sentiments("afinn"), by = "word") %>% 
+  group_by(index = element_id) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+
+bing_and_nrc_tnum <- bind_rows(
+  comparison %>% 
+    inner_join(get_sentiments("bing"), by = "word") %>%
+    mutate(method = "Bing et al."),
+  comparison %>% 
+    inner_join(get_sentiments("nrc"), by = "word") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative")) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = element_id, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+plot2 <- bind_rows(afinn_tnum, 
+          bing_and_nrc_tnum) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+grid.arrange(plot1,plot2,nrow = 1)
+```
+In the figure above, we can see trends, such as positive and negative directions. In conclusion, the emotional trends are roughly the same throughout the whole book, all in a positive direction. However, it is obvious that the level of emotion measured by the emotion lexicon is more positive than the sentiment function.
+
+Then, I decided to look at the difference between top 7 words that contribute to positive and negative sentiment in Heidi by two methods.
+
+\newpage
+```{r fig.cap="Most common positive and negative words in Heidi by two methods"}
+# Figure 3: Words that contribute to positive and negative sentiment in Heidi
+bing_word_counts <- tidy_books %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+
+# Figure 3: Words that contribute to positive and negative sentiment in Heidi
+plot3 <- bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 7) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL, title = 'by sentiment lexicon "bing"')
+
+
+bing_word_counts_tnum <- comparison %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+plot4 <- bing_word_counts_tnum %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 7) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL, title = "by sentiment function")
+grid.arrange(plot3,plot4,ncol = 1)
+```
+
+We found some differences in the terms that contributed the most in the different methods. In the negative module, the top seven terms that contributed most to negative emotions were exactly the same. while in the positive module fast, only happy and beautiful were in the top seven.
+
+Also, we found that in the former method like was used as the word that contributed the most to the positive sentiment, but it should be noted that like is positive when used as a verb, but does not mean anything when used as a preposition, so it is more numerous than any other word because it is counted when used as both a verb and a preposition.
+
+## Conclusion
+Generally speaking, the conclusions from the sentiment function are a little more objective, since different sentiment dictionaries have different definitions of whether words are positive or negative, and sometimes they even misunderstand some words for positive or negative ones. But there is still some limitation, since this is only after I have analysed the book heidi, and may not be applicable to all text analysis.
+
+## Reference 
+
+**Data Source:**    
+Johanna Spyri, Heidi, (September 1, 19989), from https://www.gutenberg.org/ebooks/1448  
+
+**Works Cited:** 
+
+David Robinson, gutenbergr: Search and download public domain texts from Project Gutenberg, (May 28, 2021), from https://cran.r-project.org/web/packages/gutenbergr/vignettes/intro.html
+
+Julia Silge and David Robinson, Text Mining with R: A Tidy Approach, (June 8, 2017), or from https://www.tidytextmining.com/
+
+Github[https://github.com/MA615-Yuli/MA615_assignment4_new/blob/main/TASK3.Rmd], https://github.com/MA615-Yuli/MA615_assignment4_new/blob/main/TASK3.Rmd
+
+Haviland Wright, tnum_instructions and examples, https://learn.bu.edu/ultra/courses/_80585_1/cl/outline
+
+
+
+
+
+
