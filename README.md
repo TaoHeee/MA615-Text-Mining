@@ -15,7 +15,7 @@ In this repository, I chose the Heidi as the dataset for text mining. I perform 
 Johanna Spyri, Heidi, (September 1, 19989), from https://www.gutenberg.org/ebooks/1448  
 
 **Picture Source**
-Heidi: A Girl of the Alps (1974) Photo Gallery, https://www.imdb.com/title/tt0070968/mediaindex/?ref_=tt_mv_close
+Heidi: A Girl of the Alps (1974) Photo Gallery, https://static.wikia.nocookie.net/literature/images/a/ad/2013Heidi3Brit.jpg/revision/latest?cb=20160729060848
 
 **Works Cited:**   
 David Robinson, gutenbergr: Search and download public domain texts from Project Gutenberg, (May 28, 2021), from https://cran.r-project.org/web/packages/gutenbergr/vignettes/intro.html
