@@ -1,0 +1,376 @@
+---
+title: "text mining"
+author: "Tao He"
+date: "11/26/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, comment = NA,
+                       warning = FALSE, margin = FALSE)
+
+pacman::p_load(
+'devtools',
+'tidytext',
+'textdata',
+'dplyr',
+'ggplot2',
+'wordcloud',
+'reshape2',
+'tnum',
+'tidyr',
+'gutenbergr',
+'tidyverse',
+'stopwords',
+'wordcloud2',
+'itsmr',
+'flextable',
+'sentimentr',
+'knitr',
+'magrittr',
+'RColorBrewer')
+
+data(stop_words)
+```
+
+
+# Introduction
+
+I choose ***Heidi*** which was written by Johanna Spyri to do the text mining, because I really love it since I was a little girl. I decided to find the sentiment trend in this book.
+
+## Task 1
+
+### Data 
+
+The book is downloaded from the gutenbergr package, which helps download and process public domain works from the Project Gutenberg collection, including downloading books.
+
+After loading ***Heidi***, I change the whole text to a data frames of individual words, which to manipulate, summarize, and visualize the characteristics of text easily, including putting it into different chapters, marking the text as individual words, removing all punctuation and capital letters and adding the line numbers. Then, I listed the initial six rows of the data set, and we can see the book id in the "gutenbergr" package, chapters, words and line numbers in the Heidi.
+
+```{r}
+Book_Heidi <- gutenberg_download(1448)
+
+tidy_books <- Book_Heidi %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+flextable(head(tidy_books)) %>% theme_booktabs() %>% autofit()
+```
+
+Chapter 0 is the text before the Chapter 1, which always include author name, book name, public data, content and so on.
+
+```{r echo = FALSE, include=FALSE, results="hide"}
+tidy_books %>% count(word, sort = TRUE)
+```
+
+Then, when we looked at that the word that appears most in the books is "heidi", except some stop-words, like "the", "and", "to", "her", "she", "of" and so on. Also, the second word is "peter", who is Heidi's best friend in the mountain. It comes as no surprise since the main character of this book is Heidi, and the story is also around her and the people around her.
+
+```{r}
+# top 10 most common words in each book
+flextable(tidy_books %>%
+        anti_join(stop_words, by = "word") %>%
+        count(word, sort = TRUE)%>%
+        top_n(10)) %>% theme_booktabs() %>% autofit()
+```
+
+Now, we take a quick look at the words whose the frequency of words over 150 times, except those stop words.
+
+```{r fig.cap="Most words in Heidi"}
+tidy_books %>%
+  anti_join(stop_words, by = "word") %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 151) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n , word)) +
+  geom_col() +
+  labs(y = NULL)
+```
+
+\newpage
+```{r fig.height=4, fig.width= 10, fig.cap="Frequencies words across all the novels"}
+# calculate percent of word use across all novels
+pct <- tidy_books %>%
+        anti_join(stop_words, by = "word") %>%
+        count(word) %>%
+        transmute(word, all_words = n / sum(n))
+
+# calculate percent of word use within each novel
+frequency <- tidy_books %>%
+        anti_join(stop_words, by = "word") %>%
+        count(word) %>%
+        mutate(book_words = n / sum(n)) %>%
+        left_join(pct, by = "word") %>%
+        arrange(desc(book_words))
+
+ggplot(frequency, aes(x = book_words, y = all_words, color = abs(all_words - book_words))) +
+        geom_abline(color = "gray40", lty = 2) +
+        geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+        geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+        scale_x_log10(labels = scales::percent_format()) +
+        scale_y_log10(labels = scales::percent_format()) +
+        scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+        theme(legend.position="none") +
+        labs(y = "Heidi", x = NULL)
+```
+
+In figure 2, words that are close to the line in these plots have similar frequencies across all the novels. For example, words such as “heidi”, “peter”, “grandmother” are fairly common and used with similar frequencies across most of the books. Words that are far from the line are words that are found more in one set of texts than another. 
+
+## Task 2
+### Sentiment Display
+
+Now, we start the sentiment analysis. We use the sentiment dictionary from tidyverse package, which contains dictionaries for different sentiment categories, such as ***afinn***, ***bing*** and ***nrc***, to perform the analysis. 
+
+### The sentiments datasets
+
+```{r echo = FALSE, include=FALSE, results="hide"}
+# The sentiments datasets
+
+# library(tidytext)
+# library(textdata)
+# Three general-purpose lexicons
+get_sentiments("afinn")
+get_sentiments("bing")
+get_sentiments("nrc")
+```
+
+Now that the text is in a tidy format with one word per row, we are ready to do the sentiment analysis. First, let’s use the NRC lexicon to see how many "joy" words in ***Heidi***.
+
+```{r}
+# Sentiment analysis with inner join
+
+# library(dplyr)
+# library(stringr)
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+flextable(head(tidy_books %>%
+  inner_join(nrc_joy, by = "word") %>%
+  count(word, sort = TRUE))) %>% theme_booktabs() %>% autofit()
+```
+
+We see mostly positive, happy words about hope, friendship, and love here, like "sun" and "beautiful". We also notice that **"child"** is also labeled as **"joy" words** in ***nrc*** sentiment dictionary, which makes sense since Children are symbolic of innocence, vitality, and are synonymous with beauty.
+
+Then, we use the ***bing*** sentiment dictionary to find the change sentiment scores across the plot trajectory by using every 150 lines.
+
+```{r fig.height=4, fig.width= 10, fig.cap='Sentiment through the narratives of Heidi by using "bing" lexicon.'}
+
+# library(tidyr)
+
+Heidi_sentiment <- tidy_books %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(index = linenumber %/% 150, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+ mutate(sentiment = positive - negative)
+
+
+#library(ggplot2)
+
+ggplot(Heidi_sentiment, aes(index, sentiment)) +
+  geom_col(show.legend = FALSE)
+# Figure 1: Sentiment through the narratives of Heidi.
+
+```
+We can see how the plot of text changes toward more positive or negative sentiment over the trajectory of the story by using the "bing" directory in this figure . It is clear to observe that there are far more positive words than negative words in this book, probably because although Heidi is a very unlucky girl who grew up with both parents dead, living in poverty and raised by her aunt, she naturally loves life, loves nature, helps people, is full of love and care for others, and the people around her life gain joy because of her. It is under the infection of her innocent feelings that her grandfather, who is full of vicissitudes and depression, becomes cheerful. 
+
+
+### Comparing the three sentiment dictionaries
+
+Since the definitions of positive and negative emotions are different in different emotion dictionaries, and I try to use different sentiment dictionaries to represent the emotion words in the book.
+
+```{r fig.height = 4, fig.width= 10, fig.cap="Comparing three sentiment lexicons with Heidi."}
+# Comparing the three sentiment dictionaries
+
+# calculate the sentiment in different ways
+afinn <- tidy_books %>% 
+  inner_join(get_sentiments("afinn"), by = "word") %>% 
+  group_by(index = linenumber %/% 80) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  tidy_books %>% 
+    inner_join(get_sentiments("bing"), by = "word") %>%
+    mutate(method = "Bing et al."),
+  tidy_books %>% 
+    inner_join(get_sentiments("nrc"), by = "word") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative")) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+# Figure 2: Comparing three sentiment lexicons with Heidi.
+```
+
+The three different dictionaries used to calculate emotions give results that differ in absolute terms, but have similar relative trajectories in the novel. We see similar emotional lows and peaks in almost the same places in the novel, but there are significant differences in absolute values. The ***"NRC"*** dictionary gives maximum absolute values with high positive values. ***"Bing et al.'s"*** dictionary and ***"AFINN"*** have lower absolute values and seem to mark more consecutive negative text blocks. Emotion seems to find longer similar texts, but all three broadly agree on the general trend of emotion through the book.
+
+Then, I decided to take a quick look at how many positive and negative words are in ***Heidi*** by using those lexicons.
+
+In Bing,
+```{r}
+# see how many positive and negative words are in bing lexicons.
+flextable(head(tidy_books %>% 
+  inner_join(get_sentiments("bing"), by = "word") %>% 
+  count(sentiment))) %>% theme_booktabs() %>% autofit()
+```
+
+In NRC,
+```{r}
+# see how many positive and negative words are in NRC lexicons.
+flextable(head(tidy_books %>% 
+  inner_join(get_sentiments("nrc"), by = "word") %>% 
+   filter(sentiment %in% c("positive", "negative")) %>% 
+   count(sentiment))) %>% theme_booktabs() %>% autofit()
+```
+It is clear that compared with "bing" lexicon, by "NRC" ***Heidi*** has more positive words, however, it has more negative words as well. At the same time, we can see that the number of positive words is far more than the number of negative words, by nearly 3 times.  
+
+
+### Most common positive and negative words
+
+```{r fig.height=4, fig.width= 10, fig.cap="Words that contribute to positive and negative sentiment in Heidi."}
+bing_word_counts <- tidy_books %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+
+# Figure 3: Words that contribute to positive and negative sentiment in Heidi
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 7) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+Also, we found that "like" was used as the word that contributed the most to the positive sentiment, but it should be noted that like is positive when used as a verb, but does not mean anything when used as a preposition, so it is more numerous than any other word because it is counted when used as both a verb and a preposition.
+
+\newpage
+### Wordclouds
+
+```{r fig.cap="The most common words in Heidi."}
+# library(wordcloud)
+tidy_books %>%
+  count(word) %>%
+  anti_join(stop_words, by = "word") %>%
+  with(wordcloud(word, freq = n, max.words = 100, scale=c(3,.2), 
+                 random.order = FALSE, rot.per = .35, colors = brewer.pal(8, "Accent")))
+# Figure 4: The most common words in Heidi.
+```
+
+Then, when we looked at that the word that appears most in the books is "heidi", except some stop-words, like "the", "and", "to", "her", "she", "of" and so on. It comes as no surprise since the main character of this book is Heidi, and the story is also around her and the people around her.
+
+```{r fig.height = 4, fig.width = 10, fig.cap="Most common positive and negative words in Heidi."}
+# library(reshape2)
+
+tidy_books %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray80", "gray20"),
+                   max.words = 100)
+# Figure 5: Most common positive and negative words in Heidi.
+```
+
+The size of a word’s text in this figure is in proportion to its frequency within its sentiment. We can use this visualization to see the most important positive and negative words, but the sizes of the words are not comparable across sentiments.
+
+
+## Task 2 Extra Credit
+
+Moreover, I find another lexicon in tidyverse, called "loughran", to figure out the change sentiment scores across the plot trajectory by using every 150 lines. 
+
+```{r fig.height=4, fig.width= 10, fig.cap='Sentiment through the narratives of Heidi by using "bing" lexicon.'}
+loughran <- tidy_books %>% 
+  inner_join(get_sentiments("loughran"), by = "word") %>% 
+  count(method = 'loughran', index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>%  
+  mutate(sentiment = positive - negative)
+
+ggplot(loughran, aes(index, sentiment)) +
+  geom_col(show.legend = FALSE)
+```
+
+By using "loughran" lexicons, we can see in the very first part, the number of negative words is more than the number of positive words, especially between 2400 and 4000 words. However, the later part of the book, the number of positive words is more than the number of negative words, which makes sense since this is a very warm book about family and friendship and the story has a happy ending.
+
+```{r}
+# see how many negative and positive words in Heidi by loughran lexicons.
+flextable(head(tidy_books %>% 
+  inner_join(get_sentiments("loughran"), by = "word") %>% 
+   filter(sentiment %in% c("positive", "negative")) %>% 
+   count(sentiment))) %>% theme_booktabs() %>% autofit()
+```
+
+
+```{r fig.cap="How many negative words and positive words in Heidi by different lexicons."}
+# add visualization
+
+end2 <- tidy_books %>% 
+  inner_join(get_sentiments("bing"), by = "word") %>% 
+  count(sentiment) %>% 
+  mutate(lable = c('bing','bing'))
+
+end3 <- tidy_books %>% 
+  inner_join(get_sentiments("nrc"), by = "word") %>% 
+   filter(sentiment %in% c("positive", "negative")) %>% 
+   count(sentiment) %>% 
+  mutate(lable = c('nrc','nrc'))
+
+end4 <- tidy_books %>% 
+  inner_join(get_sentiments("loughran"), by = "word") %>% 
+   filter(sentiment %in% c("positive", "negative")) %>% 
+   count(sentiment) %>% 
+  mutate(lable = c('loughran','loughran'))
+whole <- rbind(end2, end3, end4)
+
+ggplot(whole) + 
+  geom_col(aes(x = lable, y = n, fill = sentiment), position = 'stack') +
+  labs(x = "sentiment lexicons", y = "value")
+```
+
+\newpage
+Obviously, "nrc" lexicon has the greatest number of negative words and "loughran" lexicon has the lowest number of negative words.
+
+## Conclusion
+In short, after I did the sentiment analysis, I found that ***Heidi*** is a warm story with a happy ending although the number of negative words is more than the number of positive words at the very first beginning.  
+
+
+## Reference 
+
+**Data Source:**    
+Johanna Spyri, Heidi, (September 1, 19989), from https://www.gutenberg.org/ebooks/1448  
+
+**Works Cited:** 
+
+David Robinson, gutenbergr: Search and download public domain texts from Project Gutenberg, (May 28, 2021), from https://cran.r-project.org/web/packages/gutenbergr/vignettes/intro.html
+
+Julia Silge and David Robinson, Text Mining with R: A Tidy Approach, (June 8, 2017), or from https://www.tidytextmining.com/
+
+Github[https://github.com/MA615-Yuli/MA615_assignment4_new/blob/main/TASK3.Rmd], https://github.com/MA615-Yuli/MA615_assignment4_new/blob/main/TASK3.Rmd
+
+Haviland Wright, tnum_instructions and examples, https://learn.bu.edu/ultra/courses/_80585_1/cl/outline
+
+
+
+
+
+
+
+
+
+
